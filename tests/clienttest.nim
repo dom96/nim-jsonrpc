@@ -7,7 +7,13 @@ proc main() {.async.} =
   await rpcClient.connect("localhost", Port(5678))
 
   # Call some procedures defined on the server.
-  assert(await(rpcClient.call("add", %{"x": %123, "y": %500})).num == 623)
-  assert(await(rpcClient.call("add", %{"x": %5, "y": %23})).num == 28)
+  var response = await(rpcClient.call("add", %{"x": %123, "y": %500}))
+  assert(response.error == false)
+  assert(response.result.num == 623)
+
+  # Call some procedures undefined on the server
+  response = await(rpcClient.call("minus", %{"x": %123, "y": %500}))
+  assert(response.error == true)
+  assert(response.result["code"].num == -32601)
 
 waitFor main()
