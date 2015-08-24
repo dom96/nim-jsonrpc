@@ -3,19 +3,20 @@ import json, asyncdispatch, asyncnet, oids, future, tables
 type
   AsyncRpcClient* = ref object
     socket: AsyncSocket
-    awaitingIDs: Table[string, Future[JsonNode]]
+    awaitingIDs: Table[string, Future[Response]]
     address: string
     port: Port
+  Response = tuple[error: bool, result: JsonNode]
 
 proc newAsyncRpcClient*(): AsyncRpcClient =
   ## Creates a new ``AsyncRpcClient`` instance. 
   AsyncRpcClient(
     socket: newAsyncSocket(),
-    awaitingIDs: initTable[string, Future[JsonNode]]()
+    awaitingIDs: initTable[string, Future[Response]]()
   )
 
 proc call*(self: AsyncRpcClient, name: string,
-           params: JsonNode): Future[JsonNode] {.async.} =
+           params: JsonNode): Future[Response] {.async.} =
   ## Remotely calls the specified RPC method.
   ##
   ## The result of this call is returned.
@@ -24,7 +25,7 @@ proc call*(self: AsyncRpcClient, name: string,
   await self.socket.send($msg & "\c\l")
 
   # This Future will be completed by ``processMessage``.
-  var idFut = newFuture[JsonNode]()
+  var idFut = newFuture[Response]()
   self.awaitingIDs[id] = idFut
   result = await idFut
 
@@ -35,7 +36,11 @@ proc processMessage(self: AsyncRpcClient, line: string) =
 
   assert node.hasKey("id")
   assert self.awaitingIDs.hasKey(node["id"].str)
-  self.awaitingIDs[node["id"].str].complete(node["result"])
+
+  if node["error"].kind == JNull:
+    self.awaitingIDs[node["id"].str].complete((false, node["result"]))
+  else:
+    self.awaitingIDs[node["id"].str].complete((true, node["error"]))
 
 proc connect*(self: AsyncRpcClient, address: string, port: Port): Future[void]
 proc processData(self: AsyncRpcClient) {.async.} =

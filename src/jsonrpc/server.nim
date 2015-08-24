@@ -35,12 +35,13 @@ proc assertParam*(params: JsonNode, name: string, kind: JsonNodeKind) =
     raise RpcProcError(code: -32602, msg: "Invalid params",
                        data: newJNull())
 
+proc replyWrap(value: JsonNode, error: JsonNode, id: JsonNode): JsonNode =
+  return %{"jsonrpc": %"2.0","result": value, "error": error, "id": id}
+
 proc sendError(client: AsyncSocket, code: int, msg: string,
                data: JsonNode, id: JsonNode = newJNull()): Future[void] =
-  let error = %{"jsonrpc": %"2.0",
-      "error": %{"code": %(code), "message": %msg,
-                 "data": data, "id": id}}
-  result = client.send($error & "\c\l")
+  let error = %{"code": %(code), "message": %msg, "data": data}
+  result = client.send($replyWrap(newJNull(), error, id) & "\c\l")
 
 proc processMessage(self: AsyncRpcServer, client: AsyncSocket,
                     line: string) {.async.} =
@@ -59,8 +60,7 @@ proc processMessage(self: AsyncRpcServer, client: AsyncSocket,
 
   # TODO: Param verification.
   let callRes = await self.procs[methodName](node["params"])
-  let reply = %{"jsonrpc": %"2.0", "result": callRes, "id": id}
-  await client.send($reply & "\c\l")
+  await client.send($replyWrap(callRes, newJNull(), id) & "\c\l")
 
 proc processClient(self: AsyncRpcServer, client: AsyncSocket) {.async.} =
   while true:
